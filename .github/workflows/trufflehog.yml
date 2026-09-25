@@ -1,37 +1,52 @@
-name: Git File Recovery
+name: Find Darksignature File
 
 on:
-  workflow_dispatch: # This lets you run it manually with a button click
+  workflow_dispatch: # Run manually
 
 jobs:
-  recover:
+  find-file:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetches all history
+          fetch-depth: 0 # Get all history
 
-      - name: Force Fetch All Hidden Refs
+      - name: Fetch All Hidden Branches
         run: |
           git fetch origin '+refs/*:refs/remotes/origin/*'
-          
-      - name: Run Git FSCK to Find Lost Commits
+
+      - name: Search All Commits for Darksignature
         run: |
-          echo "--- RUNNING GIT FSCK ---"
-          git fsck --lost-found --unreachable
+          echo "--- SEARCHING ALL COMMITS FOR 'Darksignature' ---"
+          # This searches every branch and every commit for the filename
+          COMMITS=$(git log --all --oneline --name-only -- "*Darksignature*" -- "*darksignature*")
           
-      - name: Show Dangling Commits
+          if [ -z "$COMMITS" ]; then
+            echo "❌ No commits found containing 'Darksignature'. The history may have been permanently wiped by GitHub."
+            exit 0
+          fi
+          
+          echo "$COMMITS"
+
+      - name: Extract File Content
         run: |
-          echo "--- DUMPING DANGLING COMMITS ---"
-          for commit in $(find .git/lost-found/commit -type f 2>/dev/null); do
+          echo "--- EXTRACTING FILE CONTENT ---"
+          # Find all unique commit hashes that touched the file
+          COMMITS=$(git log --all --format="%H" -- "*Darksignature*" -- "*darksignature*")
+          
+          for commit in $COMMITS; do
             echo "========================================"
             echo "COMMIT: $commit"
-            git show --stat $commit || true
             echo "========================================"
+            
+            # Find the exact file path in this specific commit
+            FILEPATH=$(git ls-tree -r --name-only $commit | grep -i "darksignature")
+            
+            if [ -n "$FILEPATH" ]; then
+              echo "Found file at path: $FILEPATH"
+              echo "--- START FILE CONTENT ---"
+              git show $commit:$FILEPATH
+              echo "--- END FILE CONTENT ---"
+            fi
           done
-          
-      - name: List Deleted Files in History
-        run: |
-          echo "--- DELETED FILES IN HISTORY ---"
-          git log --diff-filter=D --summary | grep delete | head -n 50
