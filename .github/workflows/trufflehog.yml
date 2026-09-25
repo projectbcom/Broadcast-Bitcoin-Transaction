@@ -1,20 +1,37 @@
-name: TruffleHog Secret Scan
+name: Git File Recovery
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch: # This lets you run it manually with a button click
 
 jobs:
-  trufflehog:
+  recover:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetches all history for a thorough scan
+          fetch-depth: 0 # Fetches all history
 
-      - name: Run TruffleHog
-        uses: trufflesecurity/trufflehog@main
-        with:
-          extra_args: --results=verified,unknown
+      - name: Force Fetch All Hidden Refs
+        run: |
+          git fetch origin '+refs/*:refs/remotes/origin/*'
+          
+      - name: Run Git FSCK to Find Lost Commits
+        run: |
+          echo "--- RUNNING GIT FSCK ---"
+          git fsck --lost-found --unreachable
+          
+      - name: Show Dangling Commits
+        run: |
+          echo "--- DUMPING DANGLING COMMITS ---"
+          for commit in $(find .git/lost-found/commit -type f 2>/dev/null); do
+            echo "========================================"
+            echo "COMMIT: $commit"
+            git show --stat $commit || true
+            echo "========================================"
+          done
+          
+      - name: List Deleted Files in History
+        run: |
+          echo "--- DELETED FILES IN HISTORY ---"
+          git log --diff-filter=D --summary | grep delete | head -n 50
