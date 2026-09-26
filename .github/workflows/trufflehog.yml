@@ -1,10 +1,10 @@
-name: Find Darksignature File
+name: Deep Search for DarkSignature
 
 on:
   workflow_dispatch: # Run manually
 
 jobs:
-  find-file:
+  deep-search:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -12,41 +12,43 @@ jobs:
         with:
           fetch-depth: 0 # Get all history
 
-      - name: Fetch All Hidden Branches
+      - name: Fetch All Hidden Branches and Tags
         run: |
           git fetch origin '+refs/*:refs/remotes/origin/*'
 
-      - name: Search All Commits for Darksignature
+      - name: Search Every Git Object Ever Created
         run: |
-          echo "--- SEARCHING ALL COMMITS FOR 'Darksignature' ---"
-          # This searches every branch and every commit for the filename
-          COMMITS=$(git log --all --oneline --name-only -- "*Darksignature*" -- "*darksignature*")
+          echo "--- SEARCHING ALL GIT OBJECTS FOR 'darksignature' ---"
+          # This lists every single file (blob) ever committed
+          git rev-list --all --objects | grep -i "darksignature" > results.txt
           
-          if [ -z "$COMMITS" ]; then
-            echo "❌ No commits found containing 'Darksignature'. The history may have been permanently wiped by GitHub."
-            exit 0
+          if [ ! -s results.txt ]; then
+            echo "❌ No Git objects found matching 'darksignature'."
+          else
+            cat results.txt
+            echo "--- CHECKING OBJECT SIZES AND TYPES ---"
+            while read sha path; do
+              echo "Object: $path (Hash: $sha)"
+              TYPE=$(git cat-file -t $sha)
+              SIZE=$(git cat-file -s $sha)
+              echo "Type: $TYPE, Size: $SIZE bytes"
+              # Check if it's a binary executable (ELF header)
+              if [ "$TYPE" == "blob" ]; then
+                echo -n "First bytes: "
+                git cat-file -p $sha | head -c 4 | xxd
+              fi
+              echo "-----------------------------------"
+            done < results.txt
           fi
-          
-          echo "$COMMITS"
 
-      - name: Extract File Content
+      - name: Check .gitignore and LFS
         run: |
-          echo "--- EXTRACTING FILE CONTENT ---"
-          # Find all unique commit hashes that touched the file
-          COMMITS=$(git log --all --format="%H" -- "*Darksignature*" -- "*darksignature*")
-          
-          for commit in $COMMITS; do
-            echo "========================================"
-            echo "COMMIT: $commit"
-            echo "========================================"
-            
-            # Find the exact file path in this specific commit
-            FILEPATH=$(git ls-tree -r --name-only $commit | grep -i "darksignature")
-            
-            if [ -n "$FILEPATH" ]; then
-              echo "Found file at path: $FILEPATH"
-              echo "--- START FILE CONTENT ---"
-              git show $commit:$FILEPATH
-              echo "--- END FILE CONTENT ---"
-            fi
-          done
+          echo "--- .gitignore ---"
+          cat .gitignore 2>/dev/null || echo "No .gitignore file"
+          echo "--- .gitattributes (LFS) ---"
+          cat .gitattributes 2>/dev/null || echo "No .gitattributes file"
+
+      - name: Check GitHub Releases for the Binary
+        run: |
+          echo "--- CHECKING GITHUB RELEASES ---"
+          curl -s https://api.github.com/repos/projectbcom/Broadcast-Bitcoin-Transaction/releases | grep -i "browser_download_url\|name"
